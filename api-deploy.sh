@@ -48,16 +48,13 @@ function stopServer(){
     COUNTER=15
     until [ $COUNTER -lt 0 ]; do
         sleep 1
-        kill -0 $PID >& /dev/null
-        if [ $? ]; then
+        if ! kill -0 $PID >& /dev/null; then
             break
         fi
         let COUNTER-=1
     done
 
-    kill -0 $PID >& /dev/null
-
-    if [ ! $? ]; then
+    if kill -0 $PID >& /dev/null; then
         echo "Process not terminated, force kill..."
         kill $PID
     else
