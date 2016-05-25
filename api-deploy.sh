@@ -4,51 +4,66 @@
 #enviroment FIRST ARGUMENT 
 # Ex: dev | sit | uat
 env=$1
-# deploy port SECOND ARGUMENT
-# Ex: 8090 | 8091 | 8092 
-serverPort=$2
-# THIRD ARGUMENT project name, deploy folder name and jar name
-projectName=$3 #spring-boot
-# FOURTH ARGUMENT external config file name
-# Ex: application-localhost.yml
-configFile=$4
-
+# SECOND ARGUMENT project name, deploy folder name and jar name
+projectName=$2 #spring-boot
 
 #### CONFIGURABLE VARIABLES ######
-#destination absolute path. It must be pre created or you can
-# improve this script to create if not exists
-destAbsPath=/home/rcoli/Desktop/$projectName/$env
-configFolder=resources
+#destination absolute path. 
+destAbsPath=/var/lib/jenkins/spring-boot/$projectName/$env
 ##############################################################
 
 #####
 ##### DONT CHANGE HERE ##############
 #jar file
 # $WORKSPACE is a jenkins var
-sourFile=$WORKSPACE/api/build/libs/$projectName*.jar
+sourFile=$WORKSPACE/build/libs/$projectName*.jar
 destFile=$destAbsPath/$projectName.jar
-
-#config files folder
-sourConfigFolder=$WORKSPACE/$configFolder*
-destConfigFolder=$destAbsPath/$configFolder
-
-properties=--spring.config.location=$destAbsPath/$configFolder/$configFile
 
 #CONSTANTS
 logFile=initServer.log
+pidFile=application.pid
 dstLogFile=$destAbsPath/$logFile
+dstPidFile=$destAbsPath/$pidFile
 #whatToFind="Started Application in"
 whatToFind="Started "
 msgLogFileCreated="$logFile created"
-msgBuffer="Buffering: "
 msgAppStarted="Application Started... exiting buffer!"
 
 ### FUNCTIONS
 ##############
 function stopServer(){
     echo " "
-    echo "Stoping process on port: $serverPort"
-    fuser -n tcp -k $serverPort > redirection &
+    echo "Stoping process"
+
+    if [ ! -f $dstPidFile ] || ! kill -0 `cat $destAbsPath/$pidFile`; then
+        return 1
+    fi
+
+    PID=`cat $destAbsPath/$pidFile`
+
+    kill -INT $PID
+
+    echo "Waiting for process to terminate..."
+
+    COUNTER=15
+    until [ $COUNTER -lt 0 ]; do
+        sleep 1
+        kill -0 $PID >& /dev/null
+        if [ $? ]; then
+            break
+        fi
+        let COUNTER-=1
+    done
+
+    kill -0 $PID >& /dev/null
+
+    if [ ! $? ]; then
+        echo "Process not terminated, force kill..."
+        kill $PID
+    else
+        echo "Process terminated gracefully"
+    fi
+
     echo " "
 }
 
@@ -56,35 +71,37 @@ function deleteFiles(){
     echo "Deleting $destFile"
     rm -rf $destFile
 
-    echo "Deleting $destConfigFolder"
-    rm -rf $destConfigFolder
-
     echo "Deleting $dstLogFile"
     rm -rf $dstLogFile
-    
+
     echo " "
 }
 
 function copyFiles(){
+    if [ ! -d $destAbsPath ]; then
+        echo "Creating $destAbsPath"
+        mkdir -p $destAbsPath
+    fi
+
     echo "Copying files from $sourFile"
     cp $sourFile $destFile
-
-    echo "Copying files from $sourConfigFolder"
-    cp -r $sourConfigFolder $destConfigFolder
 
     echo " "
 }
 
 function run(){
 
-   #echo "java -jar $destFile --server.port=$serverPort $properties" | at now + 1 minutes
+   cd $destAbsPath
 
-   nohup nice java -jar $destFile --server.port=$serverPort $properties $> $dstLogFile 2>&1 &
+   nohup nice java -jar $destFile $> $dstLogFile 2>&1 &
 
-   echo "COMMAND: nohup nice java -jar $destFile --server.port=$serverPort $properties $> $dstLogFile 2>&1 &"
+   cd -
 
-    echo " "
+   echo "COMMAND: nohup nice java -jar $destFile $> $dstLogFile 2>&1 &"
+
+   echo " "
 }
+
 function changeFilePermission(){
 
     echo "Changing File Permission: chmod 777 $destFile"
@@ -92,15 +109,15 @@ function changeFilePermission(){
     chmod 777 $destFile
 
     echo " "
-}   
+}
 
 function watch(){
- 
+
     tail -f $dstLogFile |
 
         while IFS= read line
             do
-                echo "$msgBuffer" "$line"
+                echo "$line"
 
                 if [[ "$line" == *"$whatToFind"* ]]; then
                     echo $msgAppStarted
@@ -111,10 +128,10 @@ function watch(){
 
 ### FUNCTIONS CALLS
 #####################
-# Use Example of this file. Args: enviroment | port | project name | external resourcce
-# BUILD_ID=dontKillMe /path/to/this/file/api-deploy.sh dev 8082 spring-boot application-localhost.yml
+# Use Example of this file. Args: enviroment | project name
+# BUILD_ID=dontKillMe /path/to/this/file/api-deploy.sh dev spring-boot
 
-# 1 - stop server on port ...
+# 1 - stop server with PID ...
 stopServer
 
 # 2 - delete destinations folder content
@@ -129,3 +146,4 @@ run
 
 # 5 - watch loading messages until  ($whatToFind) message is found
 watch
+
