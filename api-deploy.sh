@@ -90,7 +90,7 @@ function run(){
 
    cd $destAbsPath
 
-   nohup nice java -jar $destFile $> $dstLogFile 2>&1 &
+   nohup nice java -jar $destFile 1> $dstLogFile 2>&1 &
 
    cd -
 
